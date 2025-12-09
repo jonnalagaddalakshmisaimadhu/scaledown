@@ -1,135 +1,207 @@
-```markdown
 # scaledown
 
-The official Python client for the ScaleDown API. This package allows you to compress long contexts and prompts to reduce token usage and latency while maintaining model performance on downstream tasks.
+`scaledown` is a Python client for the ScaleDown API. It helps you compress long contexts and prompts to reduce token usage and latency while preserving downstream model performance.
 
 ## Features
 
-- **Context Compression**: Reduce token count for RAG, long-document QA, and chat history.
-- **Model-Aware**: Optimizes compression for specific target models (e.g., `gpt-4o`).
-- **Batch Processing**: Built-in threaded execution for compressing multiple inputs in parallel.
-- **Easy Integration**: Drop-in replacement compatible with standard prompt engineering workflows.
+- Compress long contexts relative to a prompt using ScaleDown's hosted API.
+- Target specific downstream models (e.g. `gpt-4o`) for compression.
+- Support for both single and batched compression.
+- Threaded batch execution for better throughput.
+- Simple configuration via environment variables.
+
+---
 
 ## Installation
 
-```
+From PyPI (if published):
+
+```bash
 pip install scaledown
 ```
 
+From source (this repository):
+
+```bash
+git clone https://github.com/ilatims-b/scaledown.git
+cd scaledown
+pip install -e .
+```
+
+---
+
 ## Configuration
 
-You can configure the client using environment variables or by passing arguments directly.
+`ScaleDownCompressor` needs an API key and an API URL. The URL has a sensible default and can be overridden via an environment variable.
 
-### Environment Variables
+### Environment variables
 
-Set your API key globally to avoid passing it in every request:
-
-```
-export SCALEDOWN_API_KEY="sk-..."
-```
-
-Optionally, you can override the default API endpoint (useful for enterprise or staging environments):
+- `SCALEDOWN_API_KEY` – your ScaleDown API key (used by the package-wide `scaledown.get_api_key()`).
+- `SCALEDOWN_API_URL` – optional override for the compression endpoint.  
+  Defaults to:
 
 ```
+https://api.scaledown.ai/v1/compress
+```
+
+Example:
+
+```bash
+export SCALEDOWN_API_KEY="sk-your-key"
 export SCALEDOWN_API_URL="https://api.scaledown.ai/v1/compress"
 ```
 
-## Usage
+---
 
-### Basic Compression
+## Quickstart
 
-Initialize the compressor and pass your context and prompt.
+### Single prompt compression
 
-```
+```python
 from scaledown.compressor.scaledown_compressor import ScaleDownCompressor
 
-# Initialize with your API key
+# Initialize the compressor
 compressor = ScaleDownCompressor(
-    api_key="your-api-key",
     target_model="gpt-4o",
-    rate="auto"
+    rate="auto",
+    api_key="sk-your-key",        # or rely on scaledown.get_api_key()
+    temperature=None,
+    preserve_keywords=False,
+    preserve_words=None,
 )
 
-context = """
-[Long text about quantum physics history...]
-"""
-prompt = "Who were the key figures mentioned?"
+context = "Very long context, e.g. conversation history or a document..."
+prompt = "Summarize the main points in 3 bullet points."
 
-# Compress
-compressed_result = compressor.compress(context=context, prompt=prompt)
+compressed = compressor.compress(context=context, prompt=prompt)
 
-# Access results
-print("Compressed Text:\n", compressed_result.content)
-print("\nMetrics:", compressed_result.metrics)
-# Output: {'original_prompt_tokens': 1500, 'compressed_prompt_tokens': 450, ...}
+# `compressed` is a CompressedPrompt instance (string subclass)
+print("Compressed text:")
+print(compressed)
+
+print("\nMetrics:")
+print(compressed.metrics)
+# Example keys: original_prompt_tokens, compressed_prompt_tokens, latency_ms, model_used, timestamp
 ```
 
-### Batch Processing
+---
 
-To improve throughput, you can pass lists of contexts and prompts. The client automatically uses threading (default 5 workers) to process them in parallel.
+## Batch and broadcast usage
 
-```
-contexts = ["Context A...", "Context B...", "Context C..."]
-prompts = ["Question A", "Question B", "Question C"]
+`ScaleDownCompressor.compress` supports multiple input modes:
 
-# Returns a list of CompressedPrompt objects
-results = compressor.compress(context=contexts, prompt=prompts)
+- `context: str`, `prompt: str` → single compression.
+- `context: List[str]`, `prompt: List[str]` (same length) → batched compression.
+- `context: List[str]`, `prompt: str` → prompt is broadcast to all contexts.
 
-for res in results:
-    print(f"Reduced tokens from {res.metrics['original_prompt_tokens']} to {res.metrics['compressed_prompt_tokens']}")
-```
+### Batched compression
 
-### Broadcasting Prompts
+```python
+contexts = [
+    "Conversation / document A ...",
+    "Conversation / document B ...",
+]
+prompts = [
+    "Summarize conversation A.",
+    "Summarize conversation B.",
+]
 
-If you have multiple contexts (e.g., different documents) but one single prompt (e.g., "Summarize this"), you can pass the prompt as a string and the context as a list.
+batch_results = compressor.compress(context=contexts, prompt=prompts)
 
-```
-docs = ["Doc 1 content...", "Doc 2 content..."]
-query = "Extract key dates."
-
-results = compressor.compress(context=docs, prompt=query)
-```
-
-## Advanced Options
-
-You can fine-tune the compression behavior using the constructor or the `compress` method:
-
-- **`preserve_keywords`**: Ensure specific entities or terms are kept.
-- **`preserve_words`**: A list of specific words to force-keep in the output.
-- **`temperature`**: Control the stochasticity of the compression model.
-
-```
-compressor = ScaleDownCompressor(
-    api_key="...",
-    preserve_keywords=True,
-    preserve_words=["critical_variable_x"],
-    temperature=0.2
-)
+for i, res in enumerate(batch_results):
+    print(f"=== Result {i} ===")
+    print(res)
+    print(res.metrics)
 ```
 
-## Development & Testing
+### Broadcast prompt
 
-To contribute to this package:
+```python
+docs = [
+    "First document about topic X...",
+    "Second document about topic Y...",
+    "Third document about topic Z...",
+]
 
-1. **Clone the repository:**
-   ```
-   git clone https://github.com/ilatims-b/scaledown.git
-   cd scaledown
-   ```
+query = "Extract the 3 most important facts."
 
-2. **Install in editable mode:**
-   ```
-   pip install -e .
-   ```
+broadcast_results = compressor.compress(context=docs, prompt=query)
 
-3. **Run Tests:**
-   The repository includes a `tests/` directory. Use `pytest` to run them:
-   ```
-   pip install pytest requests
-   pytest tests/
-   ```
+for res in broadcast_results:
+    print(res)
+```
+
+---
+
+## Error handling
+
+The package defines custom exceptions:
+
+- `AuthenticationError` – raised when no API key is available (`scaledown.get_api_key()` and constructor both fail to provide one).
+- `APIError` – raised when the HTTP request to the ScaleDown API fails (network issues, non‑2xx responses, etc.).
+
+Example:
+
+```python
+from scaledown.compressor.scaledown_compressor import ScaleDownCompressor
+from scaledown.exceptions import AuthenticationError, APIError
+
+compressor = ScaleDownCompressor(rate="auto")
+
+try:
+    result = compressor.compress("context", "prompt")
+except AuthenticationError as e:
+    print("Authentication failed:", e)
+except APIError as e:
+    print("API call failed:", e)
+```
+
+---
+
+## Development
+
+### Setup
+
+```bash
+git clone https://github.com/ilatims-b/scaledown.git
+cd scaledown
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -e .
+```
+
+### Running tests
+
+Tests live in the `tests/` directory and use `pytest`.
+
+```bash
+pip install pytest requests
+pytest -v
+```
+
+The tests mock HTTP calls so they do not hit the real ScaleDown API.
+
+---
+
+## Project structure (simplified)
+
+```
+scaledown/
+    __init__.py
+    compressor/
+        __init__.py
+        base.py
+        config.py
+        scaledown_compressor.py
+    exceptions.py
+    types.py
+tests/
+    test_config.py
+    test_scaledown_compressor.py
+```
+
+---
 
 ## License
 
-[MIT License](LICENSE)
-```
+This project is licensed under the MIT License. See the `LICENSE` file for details.
