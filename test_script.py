@@ -8,7 +8,7 @@ from scaledown.optimizer import HasteOptimizer, SemanticOptimizer
 from scaledown.exceptions import AuthenticationError, APIError
 
 
-API_KEY = os.environ.get("SCALEDOWN_API_KEY", "yVlJ8qWWVF6wj8RZUfNHm7fUYqNBVEFr3Rrfep67")
+API_KEY = os.environ.get("SCALEDOWN_API_KEY", "0hkRzvsu7x5wd0cOb5AWU4f3Q5kJUYz45FWULY64")
 sd.set_api_key(API_KEY)
 
 if API_KEY == "your_api_key_here":
